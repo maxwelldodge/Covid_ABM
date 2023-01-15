@@ -1,0 +1,244 @@
+---
+title: "Epidemiology-ABM"
+author: "Max Dodge and Jon Kazor"
+date: "4/20/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries
+```{r, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(data.table)
+```
+
+## Creating agents
+```{r}
+n_agents = 50        #starting agents
+starting_cases = 1   #number of starting cases
+t = 2000                #time frame
+
+#create data frame with n_agents rows and 9 columns
+agents <- data.frame(matrix(ncol = 9, nrow = n_agents))
+
+#provide column names
+colnames(agents) <- c('age', 'health', 'sex', 'state', 
+                      'exposed', 'x', 'y', 
+                      'exposure_time', 'immunity')
+
+#creating our agents
+for (i in 1:nrow(agents)) {
+  
+  agents$age[i] = rnorm(1, 47, 13)                 #generating agents ages based on normal distribution
+  
+  agents$health[i] = sample(1:5, 1)                #generating agents health based off a uniform distribution
+  
+  agents$sex[i] = sample(1:2, 1)                   #generating the agents sex
+  
+  agents$state[1:starting_cases] = 1               #setting the first 'starting_cases' to positive
+  
+  agents$state[(starting_cases+1):n_agents] = 0    #setting the remaining agents to negative
+  
+  agents$exposed = 0                               #setting all the agents to unexposed
+  
+  agents$x[i] = sample(1:30, 1)                   #generating agents starting x position (uniform)
+  
+  agents$y[i] = sample(1:30, 1)                   #generating agents starting x position (uniform)
+  
+  agents$exposure_time = t + 1                     #setting all the agents exposure time to beyond the time frame
+  
+  agents$immunity = 0                              #setting all the agents to immunity 0
+}
+
+#ensuring no negative ages
+for (i in 1:nrow(agents)) {
+  if (agents$age[i] < 0) {
+    agents$age[i] = 0.01
+  }
+  if (agents$state[i] == 1) {
+    agents$exposure_time[i] = 0
+  }
+}
+
+```
+
+
+```{r}
+#create data frame for graphs
+tracking <- data.frame(matrix(ncol = 8, nrow = t))
+
+#provide column names
+colnames(tracking) <- c('time', 'susceptible', 'asymptomatic', 'symptomatic', 
+                      'critical','infected', 'dead', 'recovered')
+```
+
+## Moving
+```{r}
+move <- function() {
+  for (i in 1:nrow(agents)) {
+    random = sample(1:4, 1)     #generate random number 1-4
+    if (random == 1) {
+      agents$x[i] = agents$x[i] + 1
+    }
+    if (random == 2) {
+      agents$y[i] = agents$y[i] + 1
+    }
+    if (random == 3) {
+      agents$x[i] = agents$x[i] - 1
+    }
+    if (random == 3) {
+      agents$y[i] = agents$y[i] - 1
+    }
+  }
+  return(agents)
+}
+
+```
+
+## Exposure
+```{r}
+exposure <- function(t) {
+  for (i in 1:nrow(agents)){
+    for (j in 1:nrow(agents)) {
+      if (agents$x[i] == agents$x[j] && agents$y[i] == agents$y[j] && 
+          agents$state[j] == 1 && i != j && agents$state[i] < 1 && agents$immunity[i] == 0) {
+        agents$exposed[i] = 1
+        agents$exposure_time[i] = t
+      }
+    }
+  }
+  return(agents)
+}
+
+```
+
+## Evolving Disease
+```{r}
+evolve <- function(t) {
+  for (i in 1:nrow(agents)){
+    if (agents$exposed[i] == 1 && agents$state[i] == 0 && agents$immunity[i] == 0) {
+      if (t - agents$exposure_time[i] >= 72) {
+        
+        random = sample(1:100, 1) 
+        
+        if (random + agents$age[i]/10 + agents$health[i] + agents$sex[i]*2 > 75) {
+          agents$state[i] = 1
+        }
+        else {
+          agents$state[i] = 0
+        }
+      }
+    }
+    
+    if (agents$state[i] == 1) {
+      if (t - agents$exposure_time[i] >= 240) {
+    
+        random = sample(1:100, 1)
+        
+        if (random + agents$age[i]/10 + agents$health[i] + agents$sex[i]*2 > 80) {
+          agents$state[i] = 2
+        }
+        else {
+          agents$state[i] = 0
+          agents$immunity[i] = 1
+        }
+      }
+    }
+    if (agents$state[i] == 2) {
+      if (t - agents$exposure_time[i] >= 408) {
+        
+        random = sample(1:100, 1)
+        
+        if (random + agents$age[i]/10 + agents$health[i] + agents$sex[i]*2 > 85) {
+          agents$state[i] = 3
+        }
+        else {
+          agents$state[i] = 0
+          agents$immunity[i] = 1
+        }
+      }
+    }
+    if (agents$state[i] == 3) {
+      if (t - agents$exposure_time[i] >= 504) {
+        
+        random = sample(1:100, 1)
+        
+        if (random + agents$age[i]/10 + agents$health[i] + agents$sex[i]*2 > 90) {
+          agents$state[i] = 4
+        }
+        else {
+          agents$state[i] = 0
+          agents$immunity[i] = 1
+        }
+      }
+    }
+    if (agents$state[i] == 4) {
+      agents$x[i] = 1000
+      agents$y[i] = 1000
+      
+    }
+  }
+  return(agents)
+}
+  
+```
+
+## Running the Simulation
+```{r}
+for (j in 1:t) {
+  agents <- move()
+  agents <- exposure(j)
+  agents <- evolve(j)
+  tracking$time[j] = j
+  tracking$recovered[j] = sum(agents$immunity)
+  tracking$asymptomatic[j] = length(which(agents$state == 1))
+  tracking$symptomatic[j] = length(which(agents$state == 2))
+  tracking$critical[j] = length(which(agents$state == 3))
+  tracking$dead[j] = length(which(agents$state == 4))
+  tracking$infected[j] =   tracking$asymptomatic[j] + tracking$symptomatic[j] + tracking$critical[j]
+  tracking$susceptible[j] = n_agents - tracking$dead[j] - tracking$recovered[j] - tracking$infected[j]
+}
+```
+
+## Plots
+```{r}
+ggplot(data = tracking, mapping = aes(y = asymptomatic, x = time)) +
+  geom_line(aes(y = dead, x = time, color = "Dead")) +
+  geom_line(aes(y = susceptible, x = time, color = "Susceptible")) +
+  geom_line(aes(y = recovered, x = time, color = "Recovered")) +
+  geom_line(aes(y = infected, x = time, color = "Total Infected")) +
+  labs(y = "Count", x = "Time", 
+       color = "State", title = "Virus Evolution Over Time")
+
+ggsave("virus_evolution.png")
+```
+
+```{r}
+ggplot(data = tracking, mapping = aes(y = asymptomatic, x = time)) +
+  geom_line(aes(color = "Asymptomatic")) +
+  geom_line(aes(y = symptomatic, x = time, color = "Symptomatic")) +
+  geom_line(aes(y = critical, x = time, color = "Critical")) +
+  labs(y = "Count", x = "Time", color = "State", title = "Infection Breakdown Over Time")
+
+ggsave("infection_breakdown.png")
+```
+
+```{r}
+ggplot(data = tracking) +
+  geom_line(aes(y = infected, x = time, color = "Total Infected")) +
+  scale_color_manual(values = c("deepskyblue2", "limegreen", "red"))+
+  geom_line(aes(y = recovered, x = time, color = "Recovered")) +
+  geom_line(aes(y = susceptible, x = time, color = "Susceptible")) +
+  labs(y = "Count", x = "Time", 
+       color = "State", title = "Virus Evolution Over Time") +
+  theme_classic()
+
+ggsave("virus_evolution_minus_deaths.png")
+```
+
+
+
